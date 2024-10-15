@@ -1,6 +1,7 @@
 const http = require('http');
 const fs = require('fs').promises;
 const path = require('path');
+const superagent = require('superagent');
 const { Command } = require('commander');
 const program = new Command();
 
@@ -29,26 +30,37 @@ const server = http.createServer(async (req, res) => {
       res.end(image);
     } catch (error) {
       if (error.code === 'ENOENT') {
-        res.writeHead(404, { 'Content-Type': 'text/plain' });
-        res.end('Not Found');
+        try {
+          const response = await superagent.get(`https://http.cat/${httpCode}`);
+          const imageBuffer = response.body;
+
+          await fs.writeFile(filePath, imageBuffer);
+
+          res.writeHead(200, { 'Content-Type': 'image/jpeg' });
+          res.end(imageBuffer);
+        } catch (fetchError) {
+          res.writeHead(404, { 'Content-Type': 'text/plain' });
+          res.end('Not Found');
+        }
       } else {
         res.writeHead(500, { 'Content-Type': 'text/plain' });
         res.end('Internal Server Error');
       }
     }
   } else if (req.method === 'PUT') {
-    let body = [];
-    req.on('data', chunk => body.push(chunk));
-    req.on('end', async () => {
-      try {
-        await fs.writeFile(filePath, Buffer.concat(body));
+    try {
+      const data = [];
+      req.on('data', chunk => data.push(chunk));
+      req.on('end', async () => {
+        const imageBuffer = Buffer.concat(data);
+        await fs.writeFile(filePath, imageBuffer);
         res.writeHead(201, { 'Content-Type': 'text/plain' });
         res.end('Created');
-      } catch (error) {
-        res.writeHead(500, { 'Content-Type': 'text/plain' });
-        res.end('Internal Server Error');
-      }
-    });
+      });
+    } catch (error) {
+      res.writeHead(500, { 'Content-Type': 'text/plain' });
+      res.end('Internal Server Error');
+    }
   } else if (req.method === 'DELETE') {
     try {
       await fs.unlink(filePath);
@@ -72,4 +84,3 @@ const server = http.createServer(async (req, res) => {
 server.listen(port, host, () => {
   console.log(`http://${host}:${port}/`);
 });
-
